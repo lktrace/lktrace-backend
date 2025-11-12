@@ -148,6 +148,7 @@ impl TraceEvent {
             SYS_UNAME => self.do_uname(args),
             SYS_BRK => self.do_brk(args),
             SYS_MOUNT => self.do_common("mount", 5),
+            SYS_FTRUNCATE => self.do_common("ftruncate", 2),
             SYS_MSYNC => self.do_common("msync", 3),
             SYS_MMAP => self.do_mmap(args),
             SYS_MUNMAP => self.do_common("munmap", 2),
