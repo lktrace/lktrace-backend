@@ -140,6 +140,7 @@ impl TraceEvent {
             SYS_WRITEV => self.do_common("writev", 3),
             SYS_UNLINKAT => self.do_unlinkat(args),
             SYS_FSTATAT => self.do_fstatat(args),
+            SYS_FSTAT => self.do_fstat(args),
             SYS_EXIT_GROUP => self.do_common("exit_group", 1),
             SYS_SET_TID_ADDRESS => self.do_set_tid_address(args),
             SYS_SET_ROBUST_LIST => self.do_common("set_robust_list", 2),
@@ -317,9 +318,20 @@ impl TraceEvent {
         self.do_common("fstatat", 4)
     }
 
+    fn do_fstat(&self, args: &mut Vec<String>) -> (&'static str, usize, String) {
+        if self.result == 0 {
+            assert_eq!(self.payloads.len(), 1);
+            for payload in &self.payloads {
+                if payload.index == 1 {
+                    args[payload.index] = self.handle_stat(payload);
+                }
+            }
+        }
+        self.do_common("fstat", 2)
+    }
+
     fn handle_stat(&self, payload: &TracePayload) -> String {
         assert_eq!(payload.inout, crate::OUT);
-        assert_eq!(payload.index, 2);
         let mut buf = [0u8; KSTAT_SIZE];
         buf.clone_from_slice(&payload.data[..KSTAT_SIZE]);
 
