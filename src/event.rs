@@ -129,6 +129,7 @@ impl TraceEvent {
             SYS_MKDIRAT => self.do_common("mkdirat", 3),
             SYS_GETCWD => self.do_getcwd(args),
             SYS_CHDIR => self.do_chdir(args),
+            SYS_FCHMOD => self.do_common("fchmod", 2),
             SYS_FCHMODAT => self.do_common("fchmodat", 4),
             SYS_FCHOWNAT => self.do_common("fchownat", 5),
             SYS_OPENAT => self.do_openat(args),
