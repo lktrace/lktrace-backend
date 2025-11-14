@@ -4,10 +4,7 @@ use std::io::BufReader;
 use std::collections::{BTreeMap, HashSet};
 use crate::{IN, OUT};
 use crate::sysno::*;
-use crate::event::{TraceEvent, TraceFlow, RISCV_EXCP_U_ECALL};
-use crate::event::{RISCV_EXCP_INST_PAGE_FAULT};
-use crate::event::{RISCV_EXCP_LOAD_PAGE_FAULT};
-use crate::event::{RISCV_EXCP_STORE_PAGE_FAULT};
+use crate::event::{TraceEvent, TraceFlow, RiscvException};
 use crate::event::{parse_sigaction, SigStage};
 use crate::event::{print_events, LK_MAGIC, TE_SIZE, parse_event};
 
@@ -50,9 +47,9 @@ pub(crate) fn analyse(path: &str) -> Result<()> {
             },
         };
 
-        match evt.head.cause {
+        match RiscvException::from(evt.head.cause) {
             /* Syscall */
-            RISCV_EXCP_U_ECALL => {
+            RiscvException::UEcall => {
                 match evt.head.inout {
                     IN => {
                         debug!("request: {}", evt.head.ax[7]);
@@ -130,9 +127,9 @@ pub(crate) fn analyse(path: &str) -> Result<()> {
             }
 
             /* Page fault */
-            RISCV_EXCP_INST_PAGE_FAULT |
-            RISCV_EXCP_LOAD_PAGE_FAULT |
-            RISCV_EXCP_STORE_PAGE_FAULT => {
+            RiscvException::InstPageFault |
+            RiscvException::LoadPageFault |
+            RiscvException::StorePageFault => {
                 flow.events.push(evt);
             }
 

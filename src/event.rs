@@ -20,10 +20,26 @@ use once_cell::unsync::Lazy;
 pub const LK_MAGIC: u16 = 0xABCD;
 pub const TE_SIZE: usize = mem::size_of::<TraceHead>();
 
-pub const RISCV_EXCP_U_ECALL: u64 = 0x8;
-pub const RISCV_EXCP_INST_PAGE_FAULT: u64 = 0xc;
-pub const RISCV_EXCP_LOAD_PAGE_FAULT: u64 = 0xd;
-pub const RISCV_EXCP_STORE_PAGE_FAULT: u64 = 0xf;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RiscvException {
+    UEcall,
+    InstPageFault,
+    LoadPageFault,
+    StorePageFault,
+    Unknown(u64),
+}
+
+impl From<u64> for RiscvException {
+    fn from(v: u64) -> Self {
+        match v {
+            0x8 => RiscvException::UEcall,
+            0xc => RiscvException::InstPageFault,
+            0xd => RiscvException::LoadPageFault,
+            0xf => RiscvException::StorePageFault,
+            other => RiscvException::Unknown(other),
+        }
+    }
+}
 
 const AT_FDCWD: u64 = -100i64 as u64;
 
@@ -548,8 +564,8 @@ impl Display for TraceEvent {
             _ => (),
         }
 
-        match self.head.cause {
-            RISCV_EXCP_U_ECALL => {
+        match RiscvException::from(self.head.cause) {
+            RiscvException::UEcall => {
                 let mut args = self.head.ax[..7]
                     .iter()
                     .map(|arg| format!("{:#x}", arg))
@@ -572,9 +588,9 @@ impl Display for TraceEvent {
                 )
             }
 
-            RISCV_EXCP_INST_PAGE_FAULT |
-            RISCV_EXCP_LOAD_PAGE_FAULT |
-            RISCV_EXCP_STORE_PAGE_FAULT => {
+            RiscvException::InstPageFault |
+            RiscvException::LoadPageFault |
+            RiscvException::StorePageFault => {
                 write!(
                     fmt,
                     "#PF: cause:{:#x}, epc:{:#x}, badaddr:{:#x} priv:{}",
