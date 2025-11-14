@@ -18,6 +18,10 @@ mod payload;
 const IN: u64 = 0;
 const OUT: u64 = 1;
 
+const RISCV_EXCP_INST_PAGE_FAULT: u64 = 0xc;
+const RISCV_EXCP_LOAD_PAGE_FAULT: u64 = 0xd;
+const RISCV_EXCP_STORE_PAGE_FAULT: u64 = 0xf;
+
 const DEFAULT_LEVEL: usize = 1;
 const DEFAULT_DATA_FILE: &str = "./lk_trace.data";
 

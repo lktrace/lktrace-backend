@@ -16,6 +16,9 @@ use std::io::Result;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use once_cell::unsync::Lazy;
+use crate::RISCV_EXCP_INST_PAGE_FAULT;
+use crate::RISCV_EXCP_LOAD_PAGE_FAULT;
+use crate::RISCV_EXCP_STORE_PAGE_FAULT;
 
 pub const LK_MAGIC: u16 = 0xABCD;
 pub const TE_SIZE: usize = mem::size_of::<TraceHead>();
@@ -36,8 +39,12 @@ pub struct TraceHead {
     pub totalsize: u32,
     /// in/out 1/0
     pub inout: u64,
+    /// is non-syscall exception ?
+    pub exception: u64,
     pub cause: u64,
     pub epc: u64,
+    pub tval: u64,
+    pub cur_priv: u64,
     /// riscv a0-a7
     pub ax: [u64; 8],
     pub usp: u64,
@@ -542,28 +549,46 @@ impl Display for TraceEvent {
             },
             _ => (),
         }
-        assert_eq!(self.head.cause, USER_ECALL);
 
-        let mut args = self.head.ax[..7]
-            .iter()
-            .map(|arg| format!("{:#x}", arg))
-            .collect::<Vec<_>>();
-
-        let (sysname, argc, result) = self.handle_syscall(&mut args);
-        let sysname = if sysname.len() > 0 {
-            sysname.to_owned()
+        if self.head.exception == 1 {
+            match self.head.cause {
+                RISCV_EXCP_INST_PAGE_FAULT |
+                RISCV_EXCP_LOAD_PAGE_FAULT |
+                RISCV_EXCP_STORE_PAGE_FAULT => {
+                    write!(
+                        fmt,
+                        "#PF: cause:{:#x}, epc:{:#x}, badaddr:{:#x} priv:{}",
+                        self.head.cause,
+                        self.head.epc,
+                        self.head.tval,
+                        self.head.cur_priv
+                    )
+                },
+                _ => unreachable!(),
+            }
         } else {
-            format!("sys_{}", self.head.ax[7])
-        };
+            let mut args = self.head.ax[..7]
+                .iter()
+                .map(|arg| format!("{:#x}", arg))
+                .collect::<Vec<_>>();
 
-        write!(
-            fmt,
-            "{}({}) -> {}, usp: {:#x}",
-            sysname,
-            args[..argc].join(", "),
-            result,
-            self.head.usp
-        )
+            let (sysname, argc, result) = self.handle_syscall(&mut args);
+            let sysname = if sysname.len() > 0 {
+                sysname.to_owned()
+            } else {
+                format!("sys_{}", self.head.ax[7])
+            };
+
+            write!(
+                fmt,
+                "{}({}) -> {}, usp: {:#x}",
+                sysname,
+                args[..argc].join(", "),
+                result,
+                self.head.usp
+            )
+        }
+
     }
 }
 
@@ -576,7 +601,10 @@ pub fn parse_sigaction(evt: &TraceEvent) -> Option<(SigAction, usize)> {
 }
 
 pub fn print_events(tid: u64, events: &Vec<TraceEvent>) {
-    println!("Task[{:#x}] ========>", tid);
+    match tid {
+        0 => println!("Non-syscall exception ========>"),
+        _ => println!("Task[{:#x}] ========>", tid),
+    }
     for (idx, evt) in events.iter().enumerate() {
         println!("[{}]: {}", idx, evt);
     }
@@ -587,7 +615,6 @@ pub fn parse_event(reader: &mut BufReader<File>, level: usize) -> Result<TraceEv
     let mut buf = [0u8; TE_SIZE];
     reader.read_exact(&mut buf)?;
     let head = unsafe { mem::transmute::<[u8; TE_SIZE], TraceHead>(buf) };
-    assert_eq!(head.cause, USER_ECALL);
 
     debug!("a7: {} total: {}", head.ax[7], head.totalsize);
     let payloads = if head.totalsize as usize > head.headsize as usize {
