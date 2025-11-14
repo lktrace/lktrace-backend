@@ -16,14 +16,14 @@ use std::io::Result;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use once_cell::unsync::Lazy;
-use crate::RISCV_EXCP_INST_PAGE_FAULT;
-use crate::RISCV_EXCP_LOAD_PAGE_FAULT;
-use crate::RISCV_EXCP_STORE_PAGE_FAULT;
 
 pub const LK_MAGIC: u16 = 0xABCD;
 pub const TE_SIZE: usize = mem::size_of::<TraceHead>();
 
-pub const USER_ECALL: u64 = 8;
+pub const RISCV_EXCP_U_ECALL: u64 = 0x8;
+pub const RISCV_EXCP_INST_PAGE_FAULT: u64 = 0xc;
+pub const RISCV_EXCP_LOAD_PAGE_FAULT: u64 = 0xd;
+pub const RISCV_EXCP_STORE_PAGE_FAULT: u64 = 0xf;
 
 const AT_FDCWD: u64 = -100i64 as u64;
 
@@ -39,8 +39,6 @@ pub struct TraceHead {
     pub totalsize: u32,
     /// in/out 1/0
     pub inout: u64,
-    /// is non-syscall exception ?
-    pub exception: u64,
     pub cause: u64,
     pub epc: u64,
     pub tval: u64,
@@ -550,45 +548,45 @@ impl Display for TraceEvent {
             _ => (),
         }
 
-        if self.head.exception == 1 {
-            match self.head.cause {
-                RISCV_EXCP_INST_PAGE_FAULT |
-                RISCV_EXCP_LOAD_PAGE_FAULT |
-                RISCV_EXCP_STORE_PAGE_FAULT => {
-                    write!(
-                        fmt,
-                        "#PF: cause:{:#x}, epc:{:#x}, badaddr:{:#x} priv:{}",
-                        self.head.cause,
-                        self.head.epc,
-                        self.head.tval,
-                        self.head.cur_priv
-                    )
-                },
-                _ => unreachable!(),
+        match self.head.cause {
+            RISCV_EXCP_U_ECALL => {
+                let mut args = self.head.ax[..7]
+                    .iter()
+                    .map(|arg| format!("{:#x}", arg))
+                    .collect::<Vec<_>>();
+
+                let (sysname, argc, result) = self.handle_syscall(&mut args);
+                let sysname = if sysname.len() > 0 {
+                    sysname.to_owned()
+                } else {
+                    format!("sys_{}", self.head.ax[7])
+                };
+
+                write!(
+                    fmt,
+                    "{}({}) -> {}, usp: {:#x}",
+                    sysname,
+                    args[..argc].join(", "),
+                    result,
+                    self.head.usp
+                )
             }
-        } else {
-            let mut args = self.head.ax[..7]
-                .iter()
-                .map(|arg| format!("{:#x}", arg))
-                .collect::<Vec<_>>();
 
-            let (sysname, argc, result) = self.handle_syscall(&mut args);
-            let sysname = if sysname.len() > 0 {
-                sysname.to_owned()
-            } else {
-                format!("sys_{}", self.head.ax[7])
-            };
+            RISCV_EXCP_INST_PAGE_FAULT |
+            RISCV_EXCP_LOAD_PAGE_FAULT |
+            RISCV_EXCP_STORE_PAGE_FAULT => {
+                write!(
+                    fmt,
+                    "#PF: cause:{:#x}, epc:{:#x}, badaddr:{:#x} priv:{}",
+                    self.head.cause,
+                    self.head.epc,
+                    self.head.tval,
+                    self.head.cur_priv
+                )
+            },
 
-            write!(
-                fmt,
-                "{}({}) -> {}, usp: {:#x}",
-                sysname,
-                args[..argc].join(", "),
-                result,
-                self.head.usp
-            )
+            _ => unreachable!(),
         }
-
     }
 }
 
